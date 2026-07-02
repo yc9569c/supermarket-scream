@@ -93,54 +93,6 @@
   }
   .meter-pct { color: #fca311; font-weight: 600; font-size: 12px; min-width: 36px; text-align: right; }
 
-  .gain-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 2px;
-  }
-  .gain-row label {
-    color: #888;
-    font-size: 11px;
-    white-space: nowrap;
-    min-width: 32px;
-  }
-  input[type="range"].gain-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    flex: 1;
-    height: 4px;
-    border-radius: 2px;
-    background: #0f3460;
-    outline: none;
-    touch-action: none;
-  }
-  input[type="range"].gain-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #fca311;
-    border: 2px solid #ffd700;
-    cursor: pointer;
-    touch-action: none;
-  }
-  input[type="range"].gain-slider::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #fca311;
-    border: 2px solid #ffd700;
-    cursor: pointer;
-  }
-  .gain-val {
-    color: #fca311;
-    font-weight: 600;
-    font-size: 12px;
-    min-width: 32px;
-    text-align: right;
-  }
-
   .control-row {
     display: flex;
     align-items: center;
@@ -284,10 +236,6 @@
     .meter-bar { height: 5px; }
     .meter-label { font-size: 11px; min-width: 22px; }
     .meter-pct { font-size: 10px; min-width: 28px; }
-    .gain-row label { font-size: 10px; min-width: 24px; }
-    input[type="range"].gain-slider { height: 3px; }
-    input[type="range"].gain-slider::-webkit-slider-thumb { width: 14px; height: 14px; }
-    .gain-val { font-size: 10px; min-width: 26px; }
   }
 </style>
 </head>
@@ -327,13 +275,6 @@
       <span class="meter-pct" id="volumeText">0%</span>
     </div>
 
-    <div class="gain-row">
-      <label>🎛️</label>
-      <input type="range" class="gain-slider" id="gainSlider"
-             min="0.1" max="5.0" step="0.1" value="1.0">
-      <span class="gain-val" id="gainVal">1.0×</span>
-    </div>
-
     <div class="control-row">
       <button class="steer-btn steer-left" id="btnLeft">◀</button>
 
@@ -367,8 +308,6 @@ const timeDisplay = document.getElementById('timeDisplay');
 const coinDisplay = document.getElementById('coinDisplay');
 const volumeMeter = document.getElementById('volumeMeter');
 const volumeText = document.getElementById('volumeText');
-const gainSlider = document.getElementById('gainSlider');
-const gainVal = document.getElementById('gainVal');
 const finalScore = document.getElementById('finalScore');
 const finalCoins = document.getElementById('finalCoins');
 const micDot = document.getElementById('micDot');
@@ -474,16 +413,8 @@ function getVolume() {
   return Math.min(1, Math.max(0, (raw - 0.01) / 0.99) * 5.0);
 }
 
-// ---- Mic gain slider ----
-let micGain = parseFloat(localStorage.getItem('ss_gain')) || 1.0;
-gainSlider.value = micGain;
-gainVal.textContent = micGain.toFixed(1) + '×';
-
-gainSlider.addEventListener('input', () => {
-  micGain = parseFloat(gainSlider.value);
-  gainVal.textContent = micGain.toFixed(1) + '×';
-  localStorage.setItem('ss_gain', micGain);
-});
+// ---- Mic gain — fixed at max sensitivity ---
+let micGain = 5.0;
 
 // ---- Coin pickup sound (Web Audio) ----
 function playCoinSound() {
