@@ -470,8 +470,8 @@ function getVolume() {
   return Math.min(1, Math.max(0, (raw - 0.01) / 0.99) * 5.0);
 }
 
-// ---- Mic gain slider: -5 ~ +5 offset from 5× base ---
-let micGain = 5.0;
+// ---- Mic gain slider: -5 ~ +5 offset from 2× base ---
+let micGain = 2.0;
 (function() {
   const saved = localStorage.getItem('ss_gain_offset');
   if (saved !== null) {
@@ -483,7 +483,7 @@ let micGain = 5.0;
 function updateGain() {
   const offset = parseFloat(gainSlider.value);
   gainVal.textContent = (offset >= 0 ? '+' : '') + offset.toFixed(1);
-  micGain = Math.max(0, 5.0 + offset);
+  micGain = Math.max(0, 2.0 + offset);
   localStorage.setItem('ss_gain_offset', offset);
 }
 
