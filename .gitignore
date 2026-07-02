@@ -1,0 +1,8 @@
+# Sensitive / local-only
+server.key
+server.crt
+server.py
+
+# OS
+.DS_Store
+Thumbs.db

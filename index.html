@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>🛒 超市尖叫</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    position: fixed;                  /* iOS overscroll fix */
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #1a1a2e;
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .game-wrapper {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: #16213e;
+    overflow: hidden;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px 6px;
+    color: #e0e0e0;
+    flex-shrink: 0;
+    min-height: 40px;
+  }
+  .header .title { font-size: 16px; font-weight: 700; color: #fca311; white-space: nowrap; }
+  .header .stats { display: flex; gap: 12px; font-size: 13px; }
+  .header .stats span { color: #888; }
+  .header .stats .val { color: #fff; font-weight: 600; }
+
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #f5f0e8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #f5f0e8;
+    touch-action: none;
+    -webkit-touch-callout: none;
+  }
+
+  .bottom-area {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 10px calc(env(safe-area-inset-bottom, 10px) + 6px) 10px;
+    background: #0d1b2a;
+  }
+
+  .meter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .meter-label { color: #fca311; font-weight: 700; font-size: 14px; min-width: 28px; text-align: center; }
+  .meter-bar {
+    flex: 1;
+    height: 8px;
+    background: #0f3460;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #fca311, #e63946);
+    border-radius: 4px;
+    transition: width 0.04s;
+  }
+  .meter-pct { color: #fca311; font-weight: 600; font-size: 12px; min-width: 36px; text-align: right; }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .steer-btn {
+    width: 76px;
+    height: 76px;
+    border: none;
+    border-radius: 18px;
+    font-size: 30px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    transition: opacity 0.05s;
+    flex-shrink: 0;
+    /* iOS: remove default tap highlight */
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+  }
+  .steer-btn:focus-visible { outline: none; }
+  .steer-left {
+    background: linear-gradient(135deg, #e63946, #c1121f);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(230,57,70,0.35);
+  }
+  .steer-right {
+    background: linear-gradient(135deg, #2a9d8f, #21867a);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(42,157,143,0.35);
+  }
+  .steer-btn.pressed {
+    opacity: 0.6;
+    transform: scale(0.88);
+  }
+
+  .center-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+  }
+  .center-info .hint {
+    color: #888;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .status-mic {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: background 0.3s;
+  }
+  .dot-off   { background: #e63946; }
+  .dot-on    { background: #2ecc71; }
+  .dot-wait  { background: #fca311; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.78);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    z-index: 10;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .overlay h1 { color: #e63946; font-size: clamp(28px, 8vw, 48px); }
+  .overlay .final-score { color: #fca311; font-size: clamp(22px, 6vw, 36px); font-weight: 700; }
+  .overlay .sub { color: #ccc; font-size: clamp(14px, 4vw, 18px); }
+  .overlay .btn-restart {
+    margin-top: 10px;
+    padding: 14px 40px;
+    border: none;
+    border-radius: 14px;
+    font-size: clamp(16px, 4.5vw, 20px);
+    font-weight: 700;
+    background: #fca311;
+    color: #1a1a2e;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .overlay .btn-restart:active { opacity: 0.7; }
+
+  /* Start screen overlay */
+  .start-hint {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    z-index: 5;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  .start-hint.hidden { opacity: 0; }
+  .start-hint h2 { color: #fff; font-size: clamp(22px, 6vw, 34px); text-align: center; }
+  .start-hint p  { color: #ccc; font-size: clamp(13px, 3.5vw, 18px); text-align: center; padding: 0 24px; line-height: 1.6; }
+
+  /* Landscape phone / small screen */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .header { padding: 4px 10px; min-height: 28px; }
+    .header .title { font-size: 12px; }
+    .header .stats { font-size: 10px; gap: 6px; }
+    .steer-btn { width: 58px; height: 58px; font-size: 22px; border-radius: 14px; }
+    .bottom-area { padding: 3px 8px env(safe-area-inset-bottom, 4px) 8px; gap: 3px; }
+    .meter-bar { height: 5px; }
+    .meter-label { font-size: 11px; min-width: 22px; }
+    .meter-pct { font-size: 10px; min-width: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="game-wrapper">
+  <div class="header">
+    <div class="title">🛒 超市尖叫</div>
+    <div class="stats">
+      <div><span>🏆 </span><span class="val" id="scoreDisplay">0</span></div>
+      <div><span>⏱ </span><span class="val" id="timeDisplay">0.0</span></div>
+      <div><span>⭐ </span><span class="val" id="coinDisplay">0</span></div>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="start-hint" id="startHint">
+      <h2>🛒 超市尖叫</h2>
+      <p>📱 点一下屏幕 → 允许麦克风<br>叫越大声 🏎️ 跑越快！<br>按住 ◀ ▶ 控制方向</p>
+    </div>
+
+    <div class="overlay" id="gameOverOverlay">
+      <h1>💥 撞车了！</h1>
+      <p class="final-score" id="finalScore">0 米</p>
+      <p class="sub" id="finalCoins">🪙 收集 0 个金币</p>
+      <button class="btn-restart" id="restartBtn">🔁 再来一次</button>
+    </div>
+  </div>
+
+  <div class="bottom-area">
+    <div class="meter-row">
+      <span class="meter-label">📢</span>
+      <div class="meter-bar"><div class="meter-fill" id="volumeMeter"></div></div>
+      <span class="meter-pct" id="volumeText">0%</span>
+    </div>
+
+    <div class="control-row">
+      <button class="steer-btn steer-left" id="btnLeft">◀</button>
+
+      <div class="center-info">
+        <div class="status-mic">
+          <span class="status-dot dot-off" id="micDot"></span>
+          <span id="micLabel" style="color:#888;font-size:12px;">未连接</span>
+        </div>
+        <span class="hint">叫↗️ 冲！</span>
+      </div>
+
+      <button class="steer-btn steer-right" id="btnRight">▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  🛒  Supermarket Scream  —  iOS 适配版
+//  关键适配：HTTPS 安全上下文 + Web Audio 手势启动
+// ============================================================
+
+// ---- DOM ----
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+const startHint = document.getElementById('startHint');
+const overlay = document.getElementById('gameOverOverlay');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const timeDisplay = document.getElementById('timeDisplay');
+const coinDisplay = document.getElementById('coinDisplay');
+const volumeMeter = document.getElementById('volumeMeter');
+const volumeText = document.getElementById('volumeText');
+const finalScore = document.getElementById('finalScore');
+const finalCoins = document.getElementById('finalCoins');
+const micDot = document.getElementById('micDot');
+const micLabel = document.getElementById('micLabel');
+const btnLeft = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const restartBtn = document.getElementById('restartBtn');
+
+// ---- iOS rubber-band kill ----
+document.body.addEventListener('touchmove', (e) => {
+  if (e.target === canvas || e.target.closest('.canvas-wrap') || e.target.closest('.game-wrapper')) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+// ---- Sizing ----
+let CANVAS_W = 0;
+let CANVAS_H = 0;
+
+function resize() {
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  CANVAS_W = rect.width;
+  CANVAS_H = rect.height;
+  canvas.width = CANVAS_W * dpr;
+  canvas.height = CANVAS_H * dpr;
+  canvas.style.width = CANVAS_W + 'px';
+  canvas.style.height = CANVAS_H + 'px';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+
+// ---- Audio (deferred — created inside user gesture) ----
+let audioCtx = null;
+let analyser = null;
+let dataArray = null;
+let micStream = null;
+let audioReady = false;
+
+async function bootAudio() {
+  if (audioReady) return true;
+  try {
+    // iOS: AudioContext MUST be created inside user gesture handler
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+
+    const src = ctx.createMediaStreamSource(stream);
+    const anl = ctx.createAnalyser();
+    anl.fftSize = 256;
+    src.connect(anl);
+
+    // Resume if suspended (iOS Safari quirk)
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    audioCtx = ctx;
+    analyser = anl;
+    dataArray = new Uint8Array(anl.frequencyBinCount);
+    micStream = stream;
+    audioReady = true;
+
+    micDot.className = 'status-dot dot-on';
+    micLabel.textContent = '🎤 已连接';
+    micLabel.style.color = '#2ecc71';
+    return true;
+  } catch (e) {
+    console.error('麦克风初始化失败:', e);
+    micDot.className = 'status-dot dot-off';
+    micLabel.textContent = e.name === 'NotAllowedError' ? '❌ 被拒绝，请允许麦克风' : '❌ 麦克风不可用';
+    micLabel.style.color = '#e63946';
+    return false;
+  }
+}
+
+function getVolume() {
+  if (!analyser || !dataArray) return 0;
+  analyser.getByteTimeDomainData(dataArray);
+  let sumSq = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    const v = (dataArray[i] - 128) / 128;
+    sumSq += v * v;
+  }
+  const raw = Math.sqrt(sumSq / dataArray.length);
+  // Threshold
+  return Math.min(1, Math.max(0, (raw - 0.03) / 0.97) * 3.0);
+}
+
+// ---- Game state ----
+const S = { IDLE: 0, PLAYING: 1, OVER: 2 };
+let state = S.IDLE;
+let score = 0, coins = 0, gameTime = 0, volumeLevel = 0;
+
+// ---- Player ----
+const p = {
+  x: 400, y: 240, vx: 0, vy: 0, angle: -Math.PI / 2,
+  w: 32, h: 20,
+  maxSpeed: 380, friction: 0.97, steerSpeed: 3.2,
+};
+
+// ---- World ----
+const WW = 1600, WH = 1200;
+const cam = { x: 0, y: 0 };
+
+// ---- Objects ----
+let obstacles = [];
+let coinItems = [];
+let particles = [];
+
+// ---- Input ----
+let steerDir = 0;
+
+// ============================================================
+//  WORLD
+// ============================================================
+
+function genWorld() {
+  obstacles = []; coinItems = particles = [];
+
+  // Shelves
+  [150, 300, 450, 600, 750, 900, 1050].forEach(y => {
+    obstacles.push({ x: 0, y: y - 6, w: WW, h: 12, type: 'shelf', c: '#8B7355' });
+    obstacles.push({ x: 0, y: y + 50, w: WW, h: 12, type: 'shelf', c: '#8B7355' });
+  });
+
+  const types = [
+    { w: 28, h: 28, c: '#e63946', l: '🚫' },
+    { w: 24, h: 20, c: '#f4a261', l: '🛒' },
+    { w: 20, h: 30, c: '#e9c46a', l: '⚠️' },
+    { w: 36, h: 18, c: '#2a9d8f', l: '📦' },
+  ];
+
+  for (let i = 0; i < 60; i++) {
+    const t = types[i % 4];
+    let x, y, bad;
+    let tries = 0;
+    do {
+      x = 60 + Math.random() * (WW - 120);
+      y = 60 + Math.random() * (WH - 120);
+      bad = false;
+      for (const o of obstacles) { if (Math.abs(x-o.x) < 50 && Math.abs(y-o.y) < 50) { bad = true; break; } }
+      if (Math.abs(x - 400) < 150 && Math.abs(y - 240) < 150) bad = true;
+      tries++;
+    } while (bad && tries < 30);
+    obstacles.push({ x, y, w: t.w, h: t.h, type: 'hazard', c: t.c, l: t.l });
+  }
+
+  for (let i = 0; i < 40; i++) {
+    let x, y, bad;
+    let tries = 0;
+    do {
+      x = 40 + Math.random() * (WW - 80);
+      y = 40 + Math.random() * (WH - 80);
+      bad = false;
+      for (const o of obstacles) { if (Math.abs(x-o.x) < 30 && Math.abs(y-o.y) < 30) { bad = true; break; } }
+      if (Math.abs(x - 400) < 120 && Math.abs(y - 240) < 120) bad = true;
+      tries++;
+    } while (bad && tries < 30);
+    coinItems.push({ x, y, r: 8, got: false });
+  }
+}
+
+// ============================================================
+//  UPDATE
+// ============================================================
+
+function update(dt) {
+  if (state !== S.PLAYING) return;
+
+  volumeLevel = getVolume();
+  volumeMeter.style.width = (volumeLevel * 100) + '%';
+  volumeText.textContent = Math.round(volumeLevel * 100) + '%';
+
+  const thrust = volumeLevel > 0.06 ? volumeLevel * p.maxSpeed * 1.2 : 0;
+
+  p.angle += steerDir * p.steerSpeed * dt;
+
+  p.vx += Math.cos(p.angle) * thrust * dt;
+  p.vy += Math.sin(p.angle) * thrust * dt;
+  p.vx *= p.friction;
+  p.vy *= p.friction;
+
+  const spd = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+  if (spd > p.maxSpeed) { p.vx *= p.maxSpeed/spd; p.vy *= p.maxSpeed/spd; }
+
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  p.x = Math.max(20, Math.min(WW - 20, p.x));
+  p.y = Math.max(20, Math.min(WH - 20, p.y));
+
+  // Collision
+  const hw = p.w/2, hh = p.h/2;
+  for (const o of obstacles) {
+    if (p.x+hw > o.x-o.w/2 && p.x-hw < o.x+o.w/2 &&
+        p.y+hh > o.y-o.h/2 && p.y-hh < o.y+o.h/2) {
+      gameOver(); return;
+    }
+  }
+
+  // Coins
+  for (const c of coinItems) {
+    if (c.got) continue;
+    if (Math.abs(p.x-c.x) < 20 && Math.abs(p.y-c.y) < 20) {
+      c.got = true; coins++; coinDisplay.textContent = coins;
+      for (let i = 0; i < 8; i++) {
+        particles.push({ x: c.x, y: c.y, vx: (Math.random()-0.5)*120, vy: (Math.random()-0.5)*120, life: 0.6, maxLife: 0.6, color: '#fca311', r: 3+Math.random()*3 });
+      }
+    }
+  }
+
+  // Particles
+  for (let i = particles.length-1; i >= 0; i--) {
+    const p2 = particles[i];
+    p2.x += p2.vx*dt; p2.y += p2.vy*dt; p2.life -= dt;
+    if (p2.life <= 0) particles.splice(i, 1);
+  }
+
+  const spdNow = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+  score += spdNow * dt * 0.5;
+  gameTime += dt;
+  scoreDisplay.textContent = Math.floor(score);
+  timeDisplay.textContent = gameTime.toFixed(1);
+
+  cam.x = p.x - CANVAS_W/2;
+  cam.y = p.y - CANVAS_H/2;
+}
+
+// ============================================================
+//  RENDER
+// ============================================================
+
+let _rr = (ctx, x, y, w, h, r) => {
+  if (r > w/2) r = w/2; if (r > h/2) r = h/2;
+  ctx.beginPath();
+  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+};
+
+function draw() {
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+
+  // Floor
+  ctx.fillStyle = '#f5f0e8';
+  ctx.fillRect(0, 0, WW, WH);
+  ctx.strokeStyle = '#e8e0d0';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < WW; x += 80) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,WH); ctx.stroke(); }
+  for (let y = 0; y < WH; y += 80) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(WW,y); ctx.stroke(); }
+
+  // Obstacles
+  for (const o of obstacles) {
+    ctx.save(); ctx.translate(o.x, o.y);
+    if (o.type === 'shelf') {
+      ctx.fillStyle = '#8B7355'; ctx.fillRect(-o.w/2, -o.h/2, o.w, o.h);
+      ctx.fillStyle = '#6B5335'; ctx.fillRect(-o.w/2+2, -o.h/2+2, o.w-4, o.h-4);
+      ctx.fillStyle = '#4CAF50';
+      for (let i = -0.4; i <= 0.4; i += 0.2) ctx.fillRect(i*o.w/2-4, -o.h/2-6, 8, 5);
+    } else {
+      ctx.fillStyle = o.c;
+      ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 4;
+      _rr(ctx, -o.w/2, -o.h/2, o.w, o.h, 4); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff'; ctx.fillText(o.l, 0, 0);
+    }
+    ctx.restore();
+  }
+
+  // Coins
+  for (const c of coinItems) {
+    if (c.got) continue;
+    ctx.save(); ctx.translate(c.x, c.y);
+    ctx.shadowColor = '#fca311'; ctx.shadowBlur = 8;
+    ctx.fillStyle = '#fca311'; ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(0,0,c.r-2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#b8860b'; ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('$',0,1);
+    ctx.restore();
+  }
+
+  // Player
+  ctx.save();
+  ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+  ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 6;
+  ctx.fillStyle = '#546e7a'; _rr(ctx, -p.w/2, -p.h/2, p.w, p.h, 4); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#78909c'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(-p.w/2+4, -p.h/2+4, p.w-8, p.h-8);
+  ctx.beginPath(); ctx.moveTo(-6,-p.h/2); ctx.lineTo(-6,p.h/2);
+  ctx.moveTo(6,-p.h/2); ctx.lineTo(6,p.h/2); ctx.stroke();
+  ctx.fillStyle = '#333';
+  [-p.w/2+5, p.w/2-5].forEach(x => {
+    ctx.beginPath(); ctx.arc(x,-p.h/2-3,4,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, p.h/2+3,4,0,Math.PI*2); ctx.fill();
+  });
+
+  // Scream text
+  if (volumeLevel > 0.3) {
+    const a = Math.min(1, (volumeLevel-0.3)/0.5);
+    const off = -p.h/2 - 16 - volumeLevel * 16;
+    ctx.fillStyle = `rgba(230,57,70,${a})`;
+    ctx.font = `${12 + volumeLevel*10}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.shadowBlur = 0;
+    const t = ['啊！','啊啊！','啊啊啊！','啊啊啊啊！'];
+    ctx.fillText(t[Math.min(Math.floor(volumeLevel*4),3)] + '💥', 0, off);
+  }
+  ctx.restore();
+
+  // Particles
+  for (const p2 of particles) {
+    const a = p2.life / p2.maxLife;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p2.color;
+    ctx.beginPath(); ctx.arc(p2.x, p2.y, p2.r*a, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ============================================================
+//  GAME LOOP
+// ============================================================
+
+let lastT = 0;
+function loop(ts) {
+  const dt = lastT ? Math.min((ts-lastT)/1000, 0.05) : 0.016;
+  lastT = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+//  STATE
+// ============================================================
+
+function gameOver() {
+  state = S.OVER;
+  finalScore.textContent = Math.floor(score) + ' 米';
+  finalCoins.textContent = '🪙 收集 ' + coins + ' 个金币';
+  overlay.classList.add('show');
+}
+
+function beginPlay() {
+  state = S.PLAYING;
+  overlay.classList.remove('show');
+  startHint.classList.add('hidden');
+}
+
+function resetGame() {
+  p.x = 400; p.y = 240; p.vx = 0; p.vy = 0; p.angle = -Math.PI/2;
+  score = 0; coins = 0; gameTime = 0; particles = [];
+  scoreDisplay.textContent = '0';
+  timeDisplay.textContent = '0.0';
+  coinDisplay.textContent = '0';
+  genWorld();
+  overlay.classList.remove('show');
+  beginPlay();
+}
+
+// ============================================================
+//  GESTURE-TO-START  —  ONE TAP: mic → play
+// ============================================================
+
+let initBusy = false;
+
+async function handleGesture(e) {
+  // Prevent default on touch to block iOS scroll/zoom
+  if (e && e.type.startsWith('touch')) e.preventDefault();
+  if (audioReady) {
+    if (state === S.IDLE) beginPlay();
+    return;
+  }
+  if (initBusy) return;
+  initBusy = true;
+  micDot.className = 'status-dot dot-wait';
+  micLabel.textContent = '🔌 连接中...';
+  micLabel.style.color = '#fca311';
+  const ok = await bootAudio();
+  initBusy = false;
+  if (ok) beginPlay();
+}
+
+// Touch the canvas → start
+canvas.addEventListener('touchstart', handleGesture, { passive: false });
+canvas.addEventListener('mousedown', handleGesture);
+// Also start overlay restart can trigger mic
+restartBtn.addEventListener('touchstart', (e) => {
+  e.stopPropagation();
+  if (audioReady) resetGame();
+  else handleGesture(e);
+}, { passive: false });
+restartBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (audioReady) resetGame();
+  else handleGesture(e);
+});
+
+// ============================================================
+//  TOUCH STEERING
+// ============================================================
+
+// iOS needs both pointer events and touch events for reliable behavior.
+// We use touchstart/touchend for mobile, and mouseup/mousedown as fallback.
+
+function pressLeft(e) {
+  e.preventDefault();
+  steerDir = -1;
+  btnLeft.classList.add('pressed');
+}
+function releaseLeft(e) {
+  e.preventDefault();
+  if (steerDir === -1) steerDir = 0;
+  btnLeft.classList.remove('pressed');
+}
+function pressRight(e) {
+  e.preventDefault();
+  steerDir = 1;
+  btnRight.classList.add('pressed');
+}
+function releaseRight(e) {
+  e.preventDefault();
+  if (steerDir === 1) steerDir = 0;
+  btnRight.classList.remove('pressed');
+}
+
+// Left button
+btnLeft.addEventListener('touchstart', pressLeft, { passive: false });
+btnLeft.addEventListener('touchend', releaseLeft, { passive: false });
+btnLeft.addEventListener('touchcancel', releaseLeft, { passive: false });
+btnLeft.addEventListener('mousedown', pressLeft);
+window.addEventListener('mouseup', (e) => {
+  // Only release if we were steering left
+  if (steerDir === -1) {
+    steerDir = 0;
+    btnLeft.classList.remove('pressed');
+  }
+});
+
+// Right button
+btnRight.addEventListener('touchstart', pressRight, { passive: false });
+btnRight.addEventListener('touchend', releaseRight, { passive: false });
+btnRight.addEventListener('touchcancel', releaseRight, { passive: false });
+btnRight.addEventListener('mousedown', pressRight);
+window.addEventListener('mouseup', (e) => {
+  if (steerDir === 1) {
+    steerDir = 0;
+    btnRight.classList.remove('pressed');
+  }
+});
+
+// Keyboard (desktop testing)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') { steerDir = -1; e.preventDefault(); }
+  if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') { steerDir = 1; e.preventDefault(); }
+});
+document.addEventListener('keyup', (e) => {
+  if ((e.key === 'a'||e.key==='A'||e.key==='ArrowLeft') && steerDir === -1) steerDir = 0;
+  if ((e.key === 'd'||e.key==='D'||e.key==='ArrowRight') && steerDir === 1) steerDir = 0;
+});
+
+// ============================================================
+//  BOOT
+// ============================================================
+
+resize();
+genWorld();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
