@@ -258,6 +258,21 @@
   .start-hint.hidden { opacity: 0; }
   .start-hint h2 { color: #fff; font-size: clamp(22px, 6vw, 34px); text-align: center; }
   .start-hint p  { color: #ccc; font-size: clamp(13px, 3.5vw, 18px); text-align: center; padding: 0 24px; line-height: 1.6; }
+  .btn-start-mic {
+    margin-top: 12px;
+    padding: 14px 36px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #fca311, #e63946);
+    color: #fff;
+    font-size: clamp(16px, 4.5vw, 20px);
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+    box-shadow: 0 4px 20px rgba(252,163,17,0.4);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-start-mic:active { opacity: 0.7; transform: scale(0.95); }
 
   /* Landscape phone / small screen */
   @media (orientation: landscape) and (max-height: 500px) {
@@ -293,7 +308,8 @@
 
     <div class="start-hint" id="startHint">
       <h2>🛒 超市尖叫</h2>
-      <p>📱 点一下屏幕 → 允许麦克风<br>叫越大声 🏎️ 跑越快！<br>按住 ◀ ▶ 控制方向</p>
+      <p>叫越大声 🏎️ 跑越快！<br>按住 ◀ ▶ 控制方向</p>
+      <button class="btn-start-mic" id="startMicBtn">🎤 启动麦克风</button>
     </div>
 
     <div class="overlay" id="gameOverOverlay">
@@ -314,7 +330,7 @@
     <div class="gain-row">
       <label>🎛️</label>
       <input type="range" class="gain-slider" id="gainSlider"
-             min="0.3" max="3.0" step="0.1" value="1.0">
+             min="0.1" max="5.0" step="0.1" value="1.0">
       <span class="gain-val" id="gainVal">1.0×</span>
     </div>
 
@@ -396,13 +412,20 @@ let audioReady = false;
 
 async function bootAudio() {
   if (audioReady) return true;
+
+  // Timeout safeguard: don't hang forever
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 8000);
+
   try {
     // iOS: AudioContext MUST be created inside user gesture handler
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
 
+    // Android: avoid unsupported constraints that cause hang
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      audio: true
     });
+    clearTimeout(timeout);
 
     const src = ctx.createMediaStreamSource(stream);
     const anl = ctx.createAnalyser();
@@ -424,8 +447,15 @@ async function bootAudio() {
     return true;
   } catch (e) {
     console.error('麦克风初始化失败:', e);
+    clearTimeout(timeout);
     micDot.className = 'status-dot dot-off';
-    micLabel.textContent = e.name === 'NotAllowedError' ? '❌ 被拒绝，请允许麦克风' : '❌ 麦克风不可用';
+    if (e.name === 'NotAllowedError') {
+      micLabel.textContent = '❌ 被拒绝，请在浏览器设置中允许麦克风';
+    } else if (e.name === 'AbortError' || e.message?.includes('timeout')) {
+      micLabel.textContent = '⏱️ 麦克风超时，请检查权限后重试';
+    } else {
+      micLabel.textContent = '❌ 麦克风不可用 (' + e.name + ')';
+    }
     micLabel.style.color = '#e63946';
     return false;
   }
@@ -441,7 +471,7 @@ function getVolume() {
   }
   const raw = Math.sqrt(sumSq / dataArray.length);
   // Threshold
-  return Math.min(1, Math.max(0, (raw - 0.03) / 0.97) * 3.0);
+  return Math.min(1, Math.max(0, (raw - 0.01) / 0.99) * 5.0);
 }
 
 // ---- Mic gain slider ----
@@ -455,21 +485,45 @@ gainSlider.addEventListener('input', () => {
   localStorage.setItem('ss_gain', micGain);
 });
 
+// ---- Coin pickup sound (Web Audio) ----
+function playCoinSound() {
+  try {
+    const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1318.5, ctx.currentTime);       // E6
+    osc.frequency.setValueAtTime(1760.0, ctx.currentTime + 0.07); // A6
+    osc.frequency.setValueAtTime(2093.0, ctx.currentTime + 0.14); // C7
+
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (_) { /* sound not critical */ }
+}
+
 // ---- Game state ----
 const S = { IDLE: 0, PLAYING: 1, OVER: 2 };
 let state = S.IDLE;
 let score = 0, coins = 0, gameTime = 0, volumeLevel = 0;
 
+// ---- World ----
+const WW = 3200, WH = 2400;
+const cam = { x: 0, y: 0 };
+
 // ---- Player ----
 const p = {
-  x: 400, y: 240, vx: 0, vy: 0, angle: -Math.PI / 2,
+  x: WW / 2, y: 340, vx: 0, vy: 0, angle: -Math.PI / 2,
   w: 32, h: 20,
-  maxSpeed: 380, friction: 0.97, steerSpeed: 3.2,
+  maxSpeed: 420, friction: 0.97, steerSpeed: 3.2,
 };
-
-// ---- World ----
-const WW = 1600, WH = 1200;
-const cam = { x: 0, y: 0 };
 
 // ---- Objects ----
 let obstacles = [];
@@ -486,11 +540,18 @@ let steerDir = 0;
 function genWorld() {
   obstacles = []; coinItems = particles = [];
 
-  // Shelves
-  [150, 300, 450, 600, 750, 900, 1050].forEach(y => {
-    obstacles.push({ x: 0, y: y - 6, w: WW, h: 12, type: 'shelf', c: '#8B7355' });
-    obstacles.push({ x: 0, y: y + 50, w: WW, h: 12, type: 'shelf', c: '#8B7355' });
-  });
+  // Shelves — alternating left/right gaps so player can weave through
+  for (let y = 200; y < WH - 100; y += 200) {
+    const row = Math.floor(y / 200);
+    // Even rows: gap on left (shelf on right) | Odd rows: gap on right (shelf on left)
+    const shelfCenter = (row % 2 === 0) ? WW * 0.7 : WW * 0.3;
+    const shelfWidth = 1100;
+
+    // Top shelf bar (y - 6)
+    obstacles.push({ x: shelfCenter, y: y - 6, w: shelfWidth, h: 12, type: 'shelf', c: '#8B7355' });
+    // Bottom shelf bar (y + 80)
+    obstacles.push({ x: shelfCenter, y: y + 80, w: shelfWidth, h: 12, type: 'shelf', c: '#8B7355' });
+  }
 
   const types = [
     { w: 28, h: 28, c: '#e63946', l: '🚫' },
@@ -499,7 +560,7 @@ function genWorld() {
     { w: 36, h: 18, c: '#2a9d8f', l: '📦' },
   ];
 
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 120; i++) {
     const t = types[i % 4];
     let x, y, bad;
     let tries = 0;
@@ -508,24 +569,25 @@ function genWorld() {
       y = 60 + Math.random() * (WH - 120);
       bad = false;
       for (const o of obstacles) { if (Math.abs(x-o.x) < 50 && Math.abs(y-o.y) < 50) { bad = true; break; } }
-      if (Math.abs(x - 400) < 150 && Math.abs(y - 240) < 150) bad = true;
+      if (Math.abs(x - WW/2) < 180 && Math.abs(y - 340) < 180) bad = true;
       tries++;
     } while (bad && tries < 30);
     obstacles.push({ x, y, w: t.w, h: t.h, type: 'hazard', c: t.c, l: t.l });
   }
 
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 200; i++) {
     let x, y, bad;
     let tries = 0;
     do {
       x = 40 + Math.random() * (WW - 80);
       y = 40 + Math.random() * (WH - 80);
       bad = false;
-      for (const o of obstacles) { if (Math.abs(x-o.x) < 30 && Math.abs(y-o.y) < 30) { bad = true; break; } }
-      if (Math.abs(x - 400) < 120 && Math.abs(y - 240) < 120) bad = true;
+      for (const o of obstacles) { if (Math.abs(x-o.x) < 35 && Math.abs(y-o.y) < 35) { bad = true; break; } }
+      // Small safe zone right at spawn, but coins visible nearby
+      if (Math.abs(x - WW/2) < 80 && Math.abs(y - 340) < 80) bad = true;
       tries++;
-    } while (bad && tries < 30);
-    coinItems.push({ x, y, r: 8, got: false });
+    } while (bad && tries < 20);
+    coinItems.push({ x, y, r: 10, got: false });
   }
 }
 
@@ -540,7 +602,7 @@ function update(dt) {
   volumeMeter.style.width = (volumeLevel * 100) + '%';
   volumeText.textContent = Math.round(volumeLevel * 100) + '%';
 
-  const thrust = volumeLevel > 0.06 ? volumeLevel * p.maxSpeed * 1.2 : 0;
+  const thrust = volumeLevel > 0.04 ? volumeLevel * p.maxSpeed * 1.2 : 0;
 
   p.angle += steerDir * p.steerSpeed * dt;
 
@@ -566,14 +628,28 @@ function update(dt) {
     }
   }
 
-  // Coins
+  // Coins — respawn on collect so world stays full
   for (const c of coinItems) {
     if (c.got) continue;
     if (Math.abs(p.x-c.x) < 20 && Math.abs(p.y-c.y) < 20) {
-      c.got = true; coins++; coinDisplay.textContent = coins;
+      coins++; coinDisplay.textContent = coins;
+      playCoinSound();
       for (let i = 0; i < 8; i++) {
         particles.push({ x: c.x, y: c.y, vx: (Math.random()-0.5)*120, vy: (Math.random()-0.5)*120, life: 0.6, maxLife: 0.6, color: '#fca311', r: 3+Math.random()*3 });
       }
+      // Respawn coin at new random position (avoid obstacles + not near player)
+      let nx, ny, bad;
+      for (let t = 0; t < 30; t++) {
+        nx = 40 + Math.random() * (WW - 80);
+        ny = 40 + Math.random() * (WH - 80);
+        bad = false;
+        for (const o of obstacles) {
+          if (Math.abs(nx-o.x) < 35 && Math.abs(ny-o.y) < 35) { bad = true; break; }
+        }
+        if (!bad && Math.hypot(nx - p.x, ny - p.y) < 200) bad = true;
+        if (!bad) break;
+      }
+      c.x = nx; c.y = ny;
     }
   }
 
@@ -590,8 +666,8 @@ function update(dt) {
   scoreDisplay.textContent = Math.floor(score);
   timeDisplay.textContent = gameTime.toFixed(1);
 
-  cam.x = p.x - CANVAS_W/2;
-  cam.y = p.y - CANVAS_H/2;
+  cam.x = Math.max(0, Math.min(WW - CANVAS_W, p.x - CANVAS_W/2));
+  cam.y = Math.max(0, Math.min(WH - CANVAS_H, p.y - CANVAS_H/2));
 }
 
 // ============================================================
@@ -643,14 +719,16 @@ function draw() {
   }
 
   // Coins
+  const coinBob = Math.sin(gameTime * 3) * 0.15 + 1; // gentle pulse
   for (const c of coinItems) {
     if (c.got) continue;
+    const r = c.r * coinBob;
     ctx.save(); ctx.translate(c.x, c.y);
-    ctx.shadowColor = '#fca311'; ctx.shadowBlur = 8;
-    ctx.fillStyle = '#fca311'; ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill();
+    ctx.shadowColor = '#fca311'; ctx.shadowBlur = 16;
+    ctx.fillStyle = '#fca311'; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(0,0,c.r-2,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#b8860b'; ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(0,0,r-2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#b8860b'; ctx.font = `${Math.round(8 + r * 0.2)}px sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('$',0,1);
     ctx.restore();
   }
@@ -726,7 +804,7 @@ function beginPlay() {
 }
 
 function resetGame() {
-  p.x = 400; p.y = 240; p.vx = 0; p.vy = 0; p.angle = -Math.PI/2;
+  p.x = WW/2; p.y = 340; p.vx = 0; p.vy = 0; p.angle = -Math.PI/2;
   score = 0; coins = 0; gameTime = 0; particles = [];
   scoreDisplay.textContent = '0';
   timeDisplay.textContent = '0.0';
@@ -762,7 +840,13 @@ async function handleGesture(e) {
 // Touch the canvas → start
 canvas.addEventListener('touchstart', handleGesture, { passive: false });
 canvas.addEventListener('mousedown', handleGesture);
-// Also start overlay restart can trigger mic
+
+// Explicit start button (better browser compat)
+const startMicBtn = document.getElementById('startMicBtn');
+startMicBtn.addEventListener('click', (e) => { e.stopPropagation(); handleGesture(e); });
+startMicBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); handleGesture(e); }, { passive: false });
+
+// Restart button
 restartBtn.addEventListener('touchstart', (e) => {
   e.stopPropagation();
   if (audioReady) resetGame();
