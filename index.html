@@ -53,7 +53,7 @@ html,body{width:100%;height:100%;overflow:hidden;position:fixed;top:0;left:0;bac
   </div>
   <div class="canvas-wrap">
     <canvas id="gameCanvas"></canvas>
-    <div class="status-bar"><span class="status-dot" id="micDot"></span><span id="micLabel">等待启动</span></div>
+    <div class="status-bar"><span class="status-dot" id="micDot"></span><span id="micLabel">等待启动</span><span id="syllableLabel" style="margin-left:6px;font-size:13px;font-weight:700;color:#fca311"></span></div>
     <div class="volume-bar"><div class="volume-fill" id="volumeFill" style="height:0%"></div></div>
     <div class="touch-controls">
       <button id="btnLeft">◀</button>
@@ -63,14 +63,14 @@ html,body{width:100%;height:100%;overflow:hidden;position:fixed;top:0;left:0;bac
       <h1>🎤 声控马里奥</h1>
       <p>用声音控制角色闯关！</p>
       <div class="voice-guide">
-        <em>啊～～</em> 持续发声 → 奔跑（越大声越快）<br>
-        <em>嗯！</em> 短促用力 → 跳跃<br>
-        <em>啊！</em> 短促音 → 冲刺<br>
+        <em>啊～～</em> 持续发声 → 奔跑 🏃<br>
+        <em>嗯！</em> 短促用力 → 跳跃 🦘<br>
+        <em>啊！</em> 短促爆发 → 冲刺 💨<br>
         🤫 安静 → 停止
       </div>
       <div class="kb-hint" style="display:none;margin-top:8px;font-size:13px;color:#aaa;line-height:1.8">
         ⌨️ <em>←/→</em> 方向键移动 · <em>空格</em> 跳跃<br>
-        🎤 也支持声控：啊～跑 · 嗯！跳
+        🎤 声控：啊~跑 · 嗯！跳
       </div>
       <div style="margin-top:8px;font-size:11px;color:#888">
         ⚠️ HTTP 无法使用麦克风，如遇拒绝请改用<br>
@@ -175,38 +175,69 @@ function getVolume() {
 }
 
 // ── Voice command recognition ──
-// Uses volume envelope + simple spectral tilt:
-//   Sustained loud = RUN
-//   Sharp burst = JUMP
-//   Quick extra-loud burst = DASH (short speed boost)
+// Frequency analysis to distinguish 嗯 (nasal) vs 啊 (open vowel):
+//   嗯: more mid-high freq energy (nasal formants ~2000-3000Hz)
+//   啊: more low freq energy (formants ~800-1200Hz)
 let prevVolume = 0, jumpCooldown = 0, dashCooldown = 0;
-let sustainedTimer = 0;
+let syllableTimer = 0;
+let lastSyllable = ''; // 'en' | 'ah' | ''
 const VOICE = { RUN: false, JUMP: false, DASH: false };
 
 function analyzeVoice(vol) {
   VOICE.RUN = false; VOICE.JUMP = false; VOICE.DASH = false;
 
-  const delta = vol - prevVolume;
-  const isSustained = vol > CONFIG.RUN_THRESHOLD;
-
-  // Sustained → Run
-  if (isSustained) {
-    sustainedTimer += 16;
-    if (sustainedTimer > 100) VOICE.RUN = true;
-  } else {
-    sustainedTimer = 0;
+  // ── Frequency analysis ──
+  let lowEnergy = 0, midEnergy = 0;
+  if (analyser && freqArray) {
+    analyser.getByteFrequencyData(freqArray);
+    // Bins for 48kHz sample rate: each bin ~187.5Hz
+    // Low: bins 2-6 (~375-1125Hz)   ← 啊 formants
+    // Mid: bins 7-20 (~1312-3750Hz) ← 嗯 nasal formants
+    for (let i = 2; i <= 6; i++) lowEnergy += freqArray[i];
+    for (let i = 7; i <= 20; i++) midEnergy += freqArray[i];
   }
 
-  // Sharp burst → Jump (with cooldown)
-  if (delta > CONFIG.JUMP_BURST && vol > 0.15 && jumpCooldown <= 0) {
+  const totalSpeech = lowEnergy + midEnergy;
+  const isAh = totalSpeech > 20 && lowEnergy > midEnergy * 1.2;
+  const isEn = totalSpeech > 20 && midEnergy > lowEnergy * 1.1;
+  const isSpeech = vol > CONFIG.RUN_THRESHOLD || totalSpeech > 30;
+
+  // ── Syllable detection ──
+  if (isSpeech) {
+    syllableTimer += 16;
+    if (isAh) lastSyllable = 'ah';
+    else if (isEn && lastSyllable !== 'ah') lastSyllable = 'en';
+  } else {
+    syllableTimer = 0;
+  }
+
+  const delta = vol - prevVolume;
+  const isSustained = isSpeech && syllableTimer > 120;
+  const isBurst = delta > CONFIG.JUMP_BURST && vol > 0.12;
+
+  // 啊 (sustained) → RUN
+  if (isSustained && lastSyllable === 'ah') {
+    VOICE.RUN = true;
+  }
+
+  // 嗯 (burst) → JUMP (en burst = intentional jump)
+  if (isBurst && lastSyllable === 'en' && jumpCooldown <= 0) {
     VOICE.JUMP = true;
     jumpCooldown = CONFIG.JUMP_COOLDOWN;
   }
 
-  // Very loud burst → Dash
-  if (vol > CONFIG.DASH_THRESHOLD && delta > 0.1 && dashCooldown <= 0) {
+  // 啊 (burst) → DASH (short speed boost)
+  if (isBurst && lastSyllable === 'ah' && dashCooldown <= 0) {
     VOICE.DASH = true;
     dashCooldown = 500;
+  }
+
+  // Fallback: if frequency analysis unreliable, use envelope only
+  // Sustained any voice = run, sharp burst any voice = jump
+  if (!VOICE.RUN && isSustained) VOICE.RUN = true;
+  if (!VOICE.JUMP && isBurst && jumpCooldown <= 0) {
+    VOICE.JUMP = true;
+    jumpCooldown = CONFIG.JUMP_COOLDOWN;
   }
 
   prevVolume = vol;
@@ -689,6 +720,13 @@ function gameLoop() {
 
   // Volume bar
   document.getElementById('volumeFill').style.height = Math.min(100, vol * 120) + '%';
+
+  // Syllable indicator
+  const sl = document.getElementById('syllableLabel');
+  if (lastSyllable === 'ah') sl.textContent = '啊';
+  else if (lastSyllable === 'en') sl.textContent = '嗯';
+  else if (vol > 0.05) sl.textContent = '···';
+  else sl.textContent = '';
 
   update(16);
   render();
