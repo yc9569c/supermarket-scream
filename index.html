@@ -72,6 +72,10 @@ html,body{width:100%;height:100%;overflow:hidden;position:fixed;top:0;left:0;bac
         ⌨️ <em>←/→</em> 方向键移动 · <em>空格</em> 跳跃<br>
         🎤 也支持声控：啊～跑 · 嗯！跳
       </div>
+      <div style="margin-top:8px;font-size:11px;color:#888">
+        ⚠️ HTTP 无法使用麦克风，如遇拒绝请改用<br>
+        <strong style="color:#fca311">https://192.168.1.16:8899/</strong>
+      </div>
       <button class="hint" id="startBtn">🎤 点击启动麦克风</button>
     </div>
   </div>
@@ -142,7 +146,17 @@ async function bootAudio() {
   } catch (e) {
     clearTimeout(timeout);
     document.getElementById('micDot').className = 'status-dot dot-off';
-    document.getElementById('micLabel').textContent = '❌ 麦克风不可用';
+    let msg = '❌ 麦克风不可用';
+    if (e.name === 'NotAllowedError') {
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        msg = '❌ HTTP 禁止麦克风\n请用 HTTPS 访问端口 8899';
+      } else {
+        msg = '❌ 麦克风被拒绝\n请在浏览器设置中允许';
+      }
+    } else if (e.name === 'AbortError' || (e.message && e.message.includes('timeout'))) {
+      msg = '⏱️ 麦克风超时\n请检查权限后重试';
+    }
+    document.getElementById('micLabel').textContent = msg;
     document.getElementById('micLabel').style.color = '#e74c3c';
     return false;
   }
