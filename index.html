@@ -15,9 +15,18 @@ html,body{width:100%;height:100%;overflow:hidden;position:fixed;top:0;left:0;bac
 .header .stats .val{color:#fff;font-weight:600}
 .canvas-wrap{flex:1;position:relative;overflow:hidden;background:#5c94fc}
 #gameCanvas{width:100%;height:100%;display:block;background:#5c94fc}
-.controls{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:space-between;padding:0 16px;pointer-events:none;z-index:10}
-.controls button{pointer-events:auto;width:64px;height:64px;border-radius:50%;border:none;font-size:24px;background:rgba(255,255,255,0.2);color:#fff;backdrop-filter:blur(4px);touch-action:none}
-.controls button:active{background:rgba(255,255,255,0.4)}
+/* Desktop: hide touch buttons, show keyboard hints */
+@media (pointer: fine) {
+  .touch-controls{display:none!important}
+  .kb-hint{display:block!important}
+}
+@media (pointer: coarse) {
+  .touch-controls{display:flex!important}
+  .kb-hint{display:none!important}
+}
+.touch-controls{position:absolute;bottom:12px;left:0;right:0;display:none;justify-content:space-between;padding:0 16px;pointer-events:none;z-index:10}
+.touch-controls button{pointer-events:auto;width:64px;height:64px;border-radius:50%;border:none;font-size:24px;background:rgba(255,255,255,0.2);color:#fff;backdrop-filter:blur(4px);touch-action:none}
+.touch-controls button:active{background:rgba(255,255,255,0.4)}
 .start-screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);z-index:20;color:#fff;text-align:center;padding:20px}
 .start-screen h1{font-size:32px;margin-bottom:8px;color:#fca311}
 .start-screen p{font-size:14px;margin-bottom:6px;color:#ccc;max-width:300px}
@@ -46,7 +55,7 @@ html,body{width:100%;height:100%;overflow:hidden;position:fixed;top:0;left:0;bac
     <canvas id="gameCanvas"></canvas>
     <div class="status-bar"><span class="status-dot" id="micDot"></span><span id="micLabel">等待启动</span></div>
     <div class="volume-bar"><div class="volume-fill" id="volumeFill" style="height:0%"></div></div>
-    <div class="controls">
+    <div class="touch-controls">
       <button id="btnLeft">◀</button>
       <button id="btnRight">▶</button>
     </div>
@@ -58,6 +67,10 @@ html,body{width:100%;height:100%;overflow:hidden;position:fixed;top:0;left:0;bac
         <em>嗯！</em> 短促用力 → 跳跃<br>
         <em>啊！</em> 短促音 → 冲刺<br>
         🤫 安静 → 停止
+      </div>
+      <div class="kb-hint" style="display:none;margin-top:8px;font-size:13px;color:#aaa;line-height:1.8">
+        ⌨️ <em>←/→</em> 方向键移动 · <em>空格</em> 跳跃<br>
+        🎤 也支持声控：啊～跑 · 嗯！跳
       </div>
       <button class="hint" id="startBtn">🎤 点击启动麦克风</button>
     </div>
