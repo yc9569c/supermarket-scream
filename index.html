@@ -92,8 +92,8 @@ const CONFIG = {
   FRICTION: 0.85,
   PLAYER_W: 28,
   PLAYER_H: 36,
-  RUN_THRESHOLD: 0.06,
-  JUMP_BURST: 0.25,
+  RUN_THRESHOLD: 0.15,
+  JUMP_BURST: 0.35,
   JUMP_COOLDOWN: 300,
   DASH_THRESHOLD: 0.5,
 };
@@ -179,12 +179,16 @@ function getVolume() {
 //   嗯: more mid-high freq energy (nasal formants ~2000-3000Hz)
 //   啊: more low freq energy (formants ~800-1200Hz)
 let prevVolume = 0, jumpCooldown = 0, dashCooldown = 0;
-let syllableTimer = 0;
+let syllableTimer = 0, micStartTime = 0;
 let lastSyllable = ''; // 'en' | 'ah' | ''
 const VOICE = { RUN: false, JUMP: false, DASH: false };
 
 function analyzeVoice(vol) {
   VOICE.RUN = false; VOICE.JUMP = false; VOICE.DASH = false;
+
+  // Ignore first 1.5s after mic starts (settling noise)
+  if (!micStartTime) micStartTime = Date.now();
+  if (Date.now() - micStartTime < 1500) return;
 
   // ── Frequency analysis ──
   let lowEnergy = 0, midEnergy = 0;
@@ -198,9 +202,9 @@ function analyzeVoice(vol) {
   }
 
   const totalSpeech = lowEnergy + midEnergy;
-  const isAh = totalSpeech > 20 && lowEnergy > midEnergy * 1.2;
-  const isEn = totalSpeech > 20 && midEnergy > lowEnergy * 1.1;
-  const isSpeech = vol > CONFIG.RUN_THRESHOLD || totalSpeech > 30;
+  const isAh = totalSpeech > 60 && lowEnergy > midEnergy * 1.3;
+  const isEn = totalSpeech > 60 && midEnergy > lowEnergy * 1.2;
+  const isSpeech = vol > CONFIG.RUN_THRESHOLD;
 
   // ── Syllable detection ──
   if (isSpeech) {
@@ -212,8 +216,8 @@ function analyzeVoice(vol) {
   }
 
   const delta = vol - prevVolume;
-  const isSustained = isSpeech && syllableTimer > 120;
-  const isBurst = delta > CONFIG.JUMP_BURST && vol > 0.12;
+  const isSustained = isSpeech && syllableTimer > 250;
+  const isBurst = delta > CONFIG.JUMP_BURST && vol > 0.2;
 
   // 啊 (sustained) → RUN
   if (isSustained && lastSyllable === 'ah') {
@@ -749,7 +753,7 @@ function startGame() {
 
   buildLevel();
   resetPlayer();
-  prevVolume = 0; jumpCooldown = 0; dashCooldown = 0; sustainedTimer = 0;
+  prevVolume = 0; jumpCooldown = 0; dashCooldown = 0; syllableTimer = 0; micStartTime = 0; lastSyllable = '';
 }
 
 // ═══════════════════════════════════════════
