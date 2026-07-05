@@ -224,6 +224,7 @@ const G = {
   spikes: [],
   flagX: 0,
   cameraX: 0,
+  cameraY: 0,
   score: 0,
   dist: 0,
   gameOver: false,
@@ -304,6 +305,7 @@ function resetPlayer() {
   G.player.jumpHeld = false;
   G.player.dashTimer = 0;
   G.cameraX = 0;
+  G.cameraY = 0;
   G.score = 0;
   G.dist = 0;
   G.gameOver = false;
@@ -416,7 +418,10 @@ function update(dt) {
   if (p.x + p.w / 2 > G.flagX) G.won = true;
 
   // ── Camera ──
-  G.cameraX = Math.max(0, Math.min(G.worldWidth - W / window.devicePixelRatio, p.x - W / window.devicePixelRatio * 0.3));
+  const viewW = W / window.devicePixelRatio;
+  const viewH = H / window.devicePixelRatio;
+  G.cameraX = Math.max(0, Math.min(G.worldWidth - viewW, p.x - viewW * 0.3));
+  G.cameraY = Math.max(0, Math.min(G.groundY + 100 - viewH, p.y - viewH * 0.5));
 
   // ── Distance ──
   G.dist = Math.floor(p.x / 10);
@@ -473,7 +478,7 @@ function rRect(ctx, x, y, w, h, r) {
 // RENDER
 // ═══════════════════════════════════════════
 function render() {
-  const cx = G.cameraX;
+  const cx = G.cameraX, cy = G.cameraY;
   const w = canvas.width / window.devicePixelRatio;
   const h = canvas.height / window.devicePixelRatio;
 
@@ -495,7 +500,7 @@ function render() {
   // ── Ground ──
   for (const plat of G.platforms) {
     if (plat.x > cx + w + 100 || plat.x + plat.w < cx - 100) continue;
-    const dx = plat.x - cx, dy = plat.y;
+    const dx = plat.x - cx, dy = plat.y - cy;
 
     if (plat.type === 'ground') {
       ctx.fillStyle = '#8B5E3C';
@@ -533,7 +538,7 @@ function render() {
   ctx.fillStyle = '#e74c3c';
   for (const spike of G.spikes) {
     if (spike.x > cx + w + 50 || spike.x + spike.w < cx - 50) continue;
-    const dx = spike.x - cx, dy = spike.y;
+    const dx = spike.x - cx, dy = spike.y - cy;
     ctx.beginPath();
     ctx.moveTo(dx, dy + spike.h);
     ctx.lineTo(dx + spike.w / 2, dy);
@@ -547,7 +552,7 @@ function render() {
   for (const coin of G.coins) {
     if (coin.collected) continue;
     if (coin.x > cx + w + 20 || coin.x + coin.r < cx - 20) continue;
-    const dx = coin.x - cx, dy = coin.y + bob;
+    const dx = coin.x - cx, dy = coin.y + bob - cy;
     ctx.shadowColor = '#f1c40f';
     ctx.shadowBlur = 12;
     ctx.fillStyle = '#f1c40f';
@@ -570,22 +575,22 @@ function render() {
   // ── Flag ──
   const fx = G.flagX - cx;
   ctx.fillStyle = '#8B4513';
-  ctx.fillRect(fx, G.groundY - 120, 6, 120);
+  ctx.fillRect(fx, G.groundY - 120 - cy, 6, 120);
   ctx.fillStyle = '#27ae60';
   ctx.beginPath();
-  ctx.moveTo(fx + 6, G.groundY - 120);
-  ctx.lineTo(fx + 40, G.groundY - 105);
-  ctx.lineTo(fx + 6, G.groundY - 90);
+  ctx.moveTo(fx + 6, G.groundY - 120 - cy);
+  ctx.lineTo(fx + 40, G.groundY - 105 - cy);
+  ctx.lineTo(fx + 6, G.groundY - 90 - cy);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.font = '10px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('🏁', fx + 20, G.groundY - 108);
+  ctx.fillText('🏁', fx + 20, G.groundY - 108 - cy);
 
   // ── Player ──
   if (!G.gameOver) {
-    const px = G.player.x - cx, py = G.player.y;
+    const px = G.player.x - cx, py = G.player.y - cy;
     ctx.shadowColor = 'rgba(0,0,0,0.2)';
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 3;
@@ -634,10 +639,10 @@ function render() {
 
   // ── Particles ──
   for (const pt of G.particles) {
-    const dx = pt.x - cx;
+    const dx = pt.x - cx, dy2 = pt.y - cy;
     ctx.fillStyle = pt.color;
     ctx.globalAlpha = pt.life / 30;
-    ctx.fillRect(dx, pt.y, pt.size, pt.size);
+    ctx.fillRect(dx, dy2, pt.size, pt.size);
   }
   ctx.globalAlpha = 1;
 
